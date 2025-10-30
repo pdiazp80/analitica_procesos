@@ -1,32 +1,51 @@
 import pandas as pd
-from unidecode import unidecode
+from datetime import timedelta
 
-# Ruta del archivo original
-archivo_entrada = "actuaciones_julio-septiembre_202510300628.csv"
-archivo_salida = "actuaciones_ofuscado.csv"
+# === 1. Cargar archivo original ===
+df = pd.read_csv("actuaciones_ofuscado.csv")
 
-# Leer el CSV
-df = pd.read_csv(archivo_entrada, encoding='utf-8')
+# === 2. Crear DataFrame base ===
+df_log = pd.DataFrame()
+df_log["case_id"] = df["radicado_demanda"]
+df_log["activity"] = df["actuacion"] if "actuacion" in df.columns else "Actuación registrada"
+df_log["resource"] = df["abogado_responsable"]
+df_log["start_timestamp"] = pd.to_datetime(df["Start_Time"])
+df_log["end_timestamp"] = pd.to_datetime(df["End_Time"])
 
-# Quitar tildes de todas las columnas tipo texto
-df = df.applymap(lambda x: unidecode(str(x)) if isinstance(x, str) else x)
+# === 3. Flujo estándar (según diagrama) ===
+flujo_base = [
+    ("Presentación de demanda", "Interesado"),
+    ("Registro de demanda", "Dirección Jurídica"),
+    ("Vinculación de documentos adjuntos", "Dirección Jurídica"),
+    ("Actualización de estado de la demanda", "CSJ"),
+    ("Seguimiento y control de tiempos procesales", "Repositorio documental institucional"),
+]
 
-# Crear columna 'case_id' (numérica, secuencial desde 1)
-df.insert(0, 'case_id', range(1, len(df) + 1))
+# === 4. Generar eventos simulados faltantes ===
+rows = []
+for case_id, group in df_log.groupby("case_id"):
+    actividades_existentes = group["activity"].unique().tolist()
+    fecha_base = group["start_timestamp"].min() - timedelta(minutes=30)
 
-# Ofuscar 'oficina_territorial'
-if 'oficina_territorial' in df.columns:
-    oficinas_unicas = df['oficina_territorial'].dropna().unique()
-    mapa_oficinas = {nombre: f"Oficina {i+1}" for i, nombre in enumerate(oficinas_unicas)}
-    df['oficina_territorial'] = df['oficina_territorial'].map(mapa_oficinas)
+    for i, (actividad, recurso) in enumerate(flujo_base):
+        if actividad not in actividades_existentes:
+            rows.append({
+                "case_id": case_id,
+                "activity": actividad,
+                "resource": recurso,
+                "start_timestamp": fecha_base + timedelta(minutes=i*5),
+                "end_timestamp": fecha_base + timedelta(minutes=i*5 + 2)
+            })
 
-# Ofuscar 'abogado_responsable'
-if 'abogado_responsable' in df.columns:
-    abogados_unicos = df['abogado_responsable'].dropna().unique()
-    mapa_abogados = {nombre: f"Usuario {i+1}" for i, nombre in enumerate(abogados_unicos)}
-    df['abogado_responsable'] = df['abogado_responsable'].map(mapa_abogados)
+df_simulados = pd.DataFrame(rows)
 
-# Guardar el CSV resultante
-df.to_csv(archivo_salida, index=False, encoding='utf-8')
+# === 5. Combinar ambos conjuntos ===
+df_final = pd.concat([df_log, df_simulados], ignore_index=True)
 
-print("Archivo procesado y guardado como:", archivo_salida)
+# === 6. Ordenar por case_id y tiempo ===
+df_final = df_final.sort_values(by=["case_id", "start_timestamp"])
+
+# === 7. Exportar a CSV ===
+df_final.to_csv("log_eventos_apromore.csv", index=False)
+
+print("✅ Archivo 'log_eventos_apromore.csv' generado correctamente.")
