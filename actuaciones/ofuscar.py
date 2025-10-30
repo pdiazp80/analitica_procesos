@@ -11,6 +11,9 @@ df = pd.read_csv(archivo_entrada, encoding='utf-8')
 # Quitar tildes de todas las columnas tipo texto
 df = df.applymap(lambda x: unidecode(str(x)) if isinstance(x, str) else x)
 
+# Crear columna 'case_id' (numérica, secuencial desde 1)
+df.insert(0, 'case_id', range(1, len(df) + 1))
+
 # Ofuscar 'oficina_territorial'
 if 'oficina_territorial' in df.columns:
     oficinas_unicas = df['oficina_territorial'].dropna().unique()
